@@ -1,0 +1,75 @@
+services:
+  zookeeper:
+    hostname: zookeeper
+    image: confluentinc/cp-zookeeper:7.0.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - 2181:2181
+
+  kafka_broker:
+    hostname: kafka
+    image: confluentinc/cp-kafka:7.0.1
+    depends_on:
+      - zookeeper
+    ports:
+      - 29092:29092
+      - 9092:9092
+      - 9101:9101
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+    healthcheck:
+#      test: [ "CMD-SHELL", "kafka-topics --bootstrap-server kafka:29092 --topic mettle-customer-profile-events-v1 --describe" ]
+      test: [ "CMD-SHELL", "kafka-topics --bootstrap-server kafka:29092 --list" ] #Healthy when we can run kafka commands
+      interval: 2s
+      timeout: 20s
+      retries: 90
+
+  init-kafka:
+    image: confluentinc/cp-kafka:7.0.1
+    depends_on:
+      - kafka_broker
+    entrypoint: [ '/bin/sh', '-c']
+    command: |
+      "
+      # blocks until kafka is reachable
+      kafka-topics --bootstrap-server kafka:29092 --list
+
+      # Create Topic
+      #echo -e 'Creating kafka topics'
+      #kafka-topics --bootstrap-server kafka:29092 --topic mettle-business-events-v2 --create --partitions 18 --config "cleanup.policy=compact"
+      #kafka-topics --bootstrap-server kafka:29092 --topic mettle-business-access-events-v1 --create --partitions 12 --config "cleanup.policy=compact"
+      #kafka-topics --bootstrap-server kafka:29092 --topic mettle-customer-profile-events-v1 --create --partitions 18 --config "cleanup.policy=compact"
+      #kafka-topics --bootstrap-server kafka:29092 --topic mettle-onboarding-state-events-v1 --create --partitions 6 --config "cleanup.policy=compact"
+
+
+      echo -e 'Successfully created the following topics:'
+      kafka-topics --bootstrap-server kafka:29092 --list
+      "
+  akhq:
+    image: tchiotludo/akhq
+    environment:
+      AKHQ_CONFIGURATION: |
+        akhq:
+          connections:
+            docker-kafka-server:
+              properties:
+                bootstrap.servers: "kafka:29092"
+              connect:
+                - name: "connect"
+                  url: "http://connect:8083"
+    ports:
+      - 8093:8080
+    depends_on:
+      kafka_broker:
+        condition: service_healthy

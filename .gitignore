@@ -1,0 +1,5 @@
+target/
+.idea
+.DS_Store
+project/target
+.lib/
